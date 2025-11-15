@@ -1,0 +1,303 @@
+<!-- 文件名: templates/index.html (升级版) -->
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 聊天助手</title>
+    <style>
+        :root {
+            --bg-color: #f7f7f8;
+            --sidebar-bg: #202123;
+            --chat-bg: #343541;
+            --input-bg: #40414f;
+            --text-color: #ececf1;
+            --border-color: rgba(255, 255, 255, 0.2);
+            --accent-color: #10a37f;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: var(--bg-color);
+            margin: 0;
+            display: flex;
+            height: 100vh;
+            color: var(--text-color);
+        }
+        #sidebar {
+            width: 260px;
+            background-color: var(--sidebar-bg);
+            display: flex;
+            flex-direction: column;
+            padding: 10px;
+        }
+        #new-chat-btn {
+            display: flex;
+            align-items: center;
+            padding: 12px;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            text-align: left;
+            background: none;
+            color: var(--text-color);
+        }
+        #new-chat-btn:hover {
+            background-color: rgba(255, 255, 255, 0.1);
+        }
+        #new-chat-btn span {
+            margin-left: 10px;
+        }
+        #main-content {
+            flex-grow: 1;
+            background-color: var(--chat-bg);
+            display: flex;
+            flex-direction: column;
+            position: relative;
+        }
+        #chat-box {
+            flex-grow: 1;
+            padding: 20px 15%;
+            overflow-y: auto;
+        }
+        .message-wrapper {
+            display: flex;
+            padding: 20px;
+            gap: 20px;
+        }
+        .message {
+            max-width: 100%;
+            line-height: 1.6;
+            white-space: pre-wrap;
+        }
+        .avatar {
+            width: 30px;
+            height: 30px;
+            border-radius: 4px;
+            background-color: var(--accent-color);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+        }
+        .user .avatar { background-color: #5c2f87; }
+        .gpt .message-wrapper { background-color: #444654; }
+
+        #input-container {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            padding: 20px 15%;
+            background: linear-gradient(180deg, rgba(52,53,65,0), #343541 58.85%);
+        }
+        #input-area {
+            position: relative;
+            background-color: var(--input-bg);
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            padding: 12px;
+            display: flex;
+            align-items: center;
+        }
+        #user-input {
+            flex-grow: 1;
+            background: none;
+            border: none;
+            outline: none;
+            color: var(--text-color);
+            font-size: 16px;
+            resize: none;
+            max-height: 200px;
+        }
+        #send-button {
+            width: 32px;
+            height: 32px;
+            border: none;
+            background: var(--accent-color);
+            color: white;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        #send-button:disabled {
+            background-color: #555;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body>
+
+<div id="sidebar">
+    <button id="new-chat-btn">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 5V19" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path><path d="M5 12H19" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+        <span>新建对话</span>
+    </button>
+    <!-- 历史会话列表可以未来在这里添加 -->
+</div>
+
+<div id="main-content">
+    <div id="chat-box">
+        <!-- 欢迎信息 -->
+        <div class="message-wrapper gpt">
+            <div class="avatar">AI</div>
+            <div class="message">你好！我是你的AI助手，有什么可以帮你的吗？</div>
+        </div>
+    </div>
+
+    <div id="input-container">
+        <div id="input-area">
+            <textarea id="user-input" placeholder="向我提问..." rows="1"></textarea>
+            <button id="send-button" title="发送">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M7 11L12 6L17 11M12 18V7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+    const chatBox = document.getElementById('chat-box');
+    const userInput = document.getElementById('user-input');
+    const sendButton = document.getElementById('send-button');
+    const newChatButton = document.getElementById('new-chat-btn');
+
+    async function sendMessage() {
+        const question = userInput.value.trim();
+        if (!question) return;
+
+        addMessage(question, 'user');
+        userInput.value = '';
+        adjustTextareaHeight();
+        toggleSendButton(true);
+
+        // 创建一个用于显示"思考中"的临时消息
+        const thinkingMessage = addMessage('...', 'gpt', true);
+
+        try {
+            const response = await fetch('/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ question: question }),
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                updateThinkingMessage(thinkingMessage, `出错了: ${errorData.error || response.statusText}`);
+                return;
+            }
+
+            const data = await response.json();
+            // 更新"思考中"的消息为真实回答
+            updateThinkingMessage(thinkingMessage, data.answer);
+
+        } catch (error) {
+            console.error('Error:', error);
+            updateThinkingMessage(thinkingMessage, '网络或服务器连接失败，请检查后端服务是否正常运行。');
+        } finally {
+            toggleSendButton(false);
+        }
+    }
+
+    function addMessage(text, sender, isThinking = false) {
+        const wrapper = document.createElement('div');
+        wrapper.className = `message-wrapper ${sender}`;
+
+        const avatar = document.createElement('div');
+        avatar.className = 'avatar';
+        avatar.textContent = sender === 'user' ? '你' : 'AI';
+
+        const message = document.createElement('div');
+        message.className = 'message';
+        if (isThinking) {
+            // 打字机效果
+            message.innerHTML = '<span>.</span><span>.</span><span>.</span>';
+            message.classList.add('thinking');
+        } else {
+            message.textContent = text;
+        }
+
+        wrapper.appendChild(avatar);
+        wrapper.appendChild(message);
+        chatBox.appendChild(wrapper);
+        chatBox.scrollTop = chatBox.scrollHeight;
+        return message; // 返回消息元素以便后续更新
+    }
+
+    function updateThinkingMessage(messageElement, newText) {
+        messageElement.innerHTML = ''; // 清除打字机动画
+        messageElement.classList.remove('thinking');
+        messageElement.textContent = newText;
+        chatBox.scrollTop = chatBox.scrollHeight;
+    }
+
+    function toggleSendButton(isSending) {
+        sendButton.disabled = isSending;
+        userInput.disabled = isSending;
+        if (isSending) {
+            userInput.placeholder = "AI 正在思考中...";
+        } else {
+            userInput.placeholder = "向我提问...";
+            userInput.focus();
+        }
+    }
+
+    // 动态调整文本框高度
+    function adjustTextareaHeight() {
+        userInput.style.height = 'auto';
+        userInput.style.height = (userInput.scrollHeight) + 'px';
+    }
+
+    sendButton.addEventListener('click', sendMessage);
+    userInput.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' && !event.shiftKey) {
+            event.preventDefault();
+            sendMessage();
+        }
+    });
+    userInput.addEventListener('input', adjustTextareaHeight);
+
+    // “新建对话”按钮逻辑
+    newChatButton.addEventListener('click', async () => {
+        // 向后端发送一个“重置”信号
+        try {
+            const response = await fetch('/reset', { method: 'POST' });
+            if(response.ok) {
+                chatBox.innerHTML = `
+                    <div class="message-wrapper gpt">
+                        <div class="avatar">AI</div>
+                        <div class="message">你好！新的对话已经开始。</div>
+                    </div>`;
+                console.log("新对话已创建");
+            } else {
+                alert("创建新对话失败，请检查后端服务。");
+            }
+        } catch(e) {
+            alert("无法连接到服务器以创建新对话。");
+        }
+    });
+
+    // 为打字机效果添加一些CSS
+    const style = document.createElement('style');
+    style.innerHTML = `
+        .thinking span {
+            animation: blink 1.4s infinite both;
+            font-size: 2em;
+            line-height: 0;
+        }
+        .thinking span:nth-child(2) { animation-delay: .2s; }
+        .thinking span:nth-child(3) { animation-delay: .4s; }
+        @keyframes blink {
+            0% { opacity: .2; }
+            20% { opacity: 1; }
+            100% { opacity: .2; }
+        }
+    `;
+    document.head.appendChild(style);
+
+</script>
+
+</body>
+</html>
