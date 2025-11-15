@@ -214,6 +214,21 @@ def get_session_history():
 
     return jsonify({"messages": chat_session.messages})
 
+@app.route('/session/delete', methods=['POST'])
+def delete_session():
+    data = request.get_json()
+    session_id_to_delete = data.get('session_id')
+
+    if not session_id_to_delete:
+        return jsonify({"error": "请求中缺少 'session_id'"}), 400
+
+    # 检查会话是否存在并删除
+    if session_id_to_delete in session_manager.sessions:
+        del session_manager.sessions[session_id_to_delete]
+        print(f"会话已删除: {session_id_to_delete}")
+        return jsonify({"status": "ok", "message": "会话已删除"})
+    else:
+        return jsonify({"error": "无效的 session_id"}), 404
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=6006, debug=True)

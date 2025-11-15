@@ -1,4 +1,4 @@
-<!-- 文件名: templates/index.html (在UI升级版基础上增加多会话功能) -->
+<!-- 文件名: templates/index.html (在你提供的代码基础上修正) -->
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -55,8 +55,10 @@
             flex-grow: 1;
             overflow-y: auto;
         }
+        /* 【新增样式】为删除按钮和悬停效果添加CSS */
         .history-item {
-            padding: 10px 12px;
+            position: relative; /* 必须，为删除按钮定位提供基准 */
+            padding: 10px 40px 10px 12px; /* 右侧留出删除按钮空间 */
             border-radius: 6px;
             cursor: pointer;
             white-space: nowrap;
@@ -70,6 +72,30 @@
         .history-item.active {
             background-color: var(--accent-color);
         }
+        /* 删除按钮的样式 */
+        .delete-btn {
+            display: none; /* 默认隐藏 */
+            position: absolute;
+            right: 8px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: none;
+            border: none;
+            color: #c5c5d2;
+            cursor: pointer;
+            padding: 4px;
+            border-radius: 4px;
+            font-size: 16px; /* 调整图标大小 */
+        }
+        /* 悬停在列表项上时，显示删除按钮 */
+        .history-item:hover .delete-btn {
+            display: block;
+        }
+        .delete-btn:hover {
+            background-color: rgba(255, 255, 255, 0.2);
+            color: white;
+        }
+        /* --- 其他样式保持不变 --- */
         #main-content {
             flex-grow: 1;
             background-color: var(--chat-bg);
@@ -237,17 +263,20 @@
 
         if (data && data.answer) {
             updateThinkingMessage(thinkingMessage, data.answer);
-            // 检查是否需要更新侧边栏标题
+
+            // 【修正部分】
             const historyItem = document.querySelector(`.history-item[data-session-id="${currentSessionId}"]`);
-            if (historyItem && historyItem.textContent === "新对话") {
-                historyItem.textContent = question;
+            // 确保找到了 historyItem，再在它内部寻找 .history-title
+            const titleSpan = historyItem ? historyItem.querySelector('.history-title') : null;
+            if (titleSpan && titleSpan.textContent === "新对话") {
+                titleSpan.textContent = question; // 只更新标题文本
             }
         } else {
             updateThinkingMessage(thinkingMessage, '抱歉，无法获取回答。请检查后端日志。');
         }
         toggleInput(false);
     }
-    
+
     // ----- 会话管理 -----
     async function createNewSession() {
         toggleInput(true, "正在创建新对话...");
@@ -294,9 +323,70 @@
                 data.messages.forEach(msg => addMessageToUI(msg.content, msg.role));
             }
         }
-        
+
         updateActiveHistoryItemUI(sessionId);
         toggleInput(false);
+    }
+
+    async function deleteSession(sessionIdToDelete, event) {
+        event.stopPropagation(); // 阻止事件冒泡，防止触发切换会话的点击事件
+
+        if (!confirm("你确定要删除这个对话吗？")) {
+            return;
+        }
+
+        const data = await apiRequest('/session/delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ session_id: sessionIdToDelete }),
+        });
+
+        if (data && data.status === 'ok') {
+            // 从UI上移除该项
+            const itemToRemove = document.querySelector(`.history-item[data-session-id="${sessionIdToDelete}"]`);
+            if (itemToRemove) {
+                itemToRemove.remove();
+            }
+
+            // 如果删除的是当前正在活跃的会话
+            if (currentSessionId === sessionIdToDelete) {
+                currentSessionId = null; // 重置当前ID
+                // 自动切换到列表里的第一个会话，或者新建一个
+                const firstItem = historyList.querySelector('.history-item');
+                if (firstItem) {
+                    await switchToSession(firstItem.dataset.sessionId);
+                } else {
+                    await createNewSession();
+                }
+            }
+        }
+    }
+
+    // 【修正部分】这是唯一的、正确的 updateHistoryListUI 函数
+    function updateHistoryListUI(sessions) {
+        historyList.innerHTML = '';
+        for (const [id, title] of Object.entries(sessions)) {
+            const item = document.createElement('div');
+            item.className = 'history-item';
+            item.dataset.sessionId = id;
+            item.onclick = () => switchToSession(id); // 点击整个item切换会话
+
+            // 标题
+            const titleSpan = document.createElement('span');
+            titleSpan.className = 'history-title';
+            titleSpan.textContent = title;
+
+            // 删除按钮
+            const deleteBtn = document.createElement('button');
+            deleteBtn.className = 'delete-btn';
+            deleteBtn.innerHTML = '&#128465;'; // 垃圾桶图标的HTML实体
+            deleteBtn.title = '删除对话';
+            deleteBtn.onclick = (event) => deleteSession(id, event);
+
+            item.appendChild(titleSpan);
+            item.appendChild(deleteBtn);
+            historyList.appendChild(item);
+        }
     }
 
     // ----- UI 更新和辅助函数 -----
@@ -331,19 +421,6 @@
         messageDiv.classList.remove('thinking');
         messageDiv.textContent = newText;
         scrollToBottom();
-    }
-
-    function updateHistoryListUI(sessions) {
-        historyList.innerHTML = '';
-        // 按创建顺序（通常是字典顺序，但不保证，未来可优化为时间戳排序）
-        for (const [id, title] of Object.entries(sessions)) {
-            const item = document.createElement('div');
-            item.className = 'history-item';
-            item.textContent = title;
-            item.dataset.sessionId = id;
-            item.onclick = () => switchToSession(id);
-            historyList.appendChild(item);
-        }
     }
 
     function updateActiveHistoryItemUI(sessionId) {
