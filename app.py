@@ -36,6 +36,7 @@ class ChatSession:
     def __init__(self):
         self.conversation_id = None
         self.parent_message_id = str(uuid.uuid4())
+        self.messages = []
 
     def build_payload(self, q: str) -> dict:
         p = json.loads(RAW_DATA);
@@ -121,53 +122,98 @@ class ChatSession:
             return f"错误：无法连接到GPT服务。请检查网络连接和API地址。详情: {e}"
 
 
+class SessionManager:
+    def __init__(self):
+        # 使用字典存储所有会话，key=session_id, value=ChatSession对象
+        self.sessions = {}
+
+    def create_session(self) -> str:
+        """创建一个新的会话，并返回其唯一ID"""
+        session_id = str(uuid.uuid4())
+        self.sessions[session_id] = ChatSession()
+        print(f"新会话已创建: {session_id}")
+        return session_id
+
+    def get_session(self, session_id: str) -> ChatSession:
+        """根据ID获取一个已存在的会话"""
+        return self.sessions.get(session_id)
+
+    def get_all_sessions_info(self) -> dict:
+        """获取所有会话的摘要信息（ID和第一个问题）"""
+        info = {}
+        for session_id, session in self.sessions.items():
+            # 使用会话的第一个用户问题作为标题，如果没有则使用默认标题
+            title = session.messages[0]['content'] if session.messages else "新对话"
+            info[session_id] = title
+        return info
+
+
+# 创建一个全局的会话管理器实例
+session_manager = SessionManager()
+
 # ==============================================================================
-# 2. Flask 应用和全局会话 (这部分不用动)
+# 3. Flask 应用和重构后的路由
 # ==============================================================================
 app = Flask(__name__)
-chat_session = ChatSession()
 
-
-# ==============================================================================
-# 3. 【核心修改】创建根路由，用于显示聊天页面
-# ==============================================================================
 @app.route('/')
 def home():
-    # 当用户访问根目录时，返回 index.html 页面
     return render_template('index.html')
 
 
-# ==============================================================================
-# 4. 保留 /chat 路由作为后端的API接口
-#    (前端页面的JavaScript会调用这个接口)
-# ==============================================================================
+# 【修改】/chat 路由现在需要接收 session_id
 @app.route('/chat', methods=['POST'])
 def handle_chat():
-    # 这个接口现在专门给前端的JS调用
-    if not request.is_json:
-        return jsonify({"error": "请求必须是JSON格式"}), 400
     data = request.get_json()
+    session_id = data.get('session_id')
     question = data.get('question')
-    if not question:
-        return jsonify({"error": "JSON中缺少 'question' 字段"}), 400
 
-    print(f"收到网页问题: {question}")
+    if not all([session_id, question]):
+        return jsonify({"error": "请求中缺少 'session_id' 或 'question'"}), 400
+
+    chat_session = session_manager.get_session(session_id)
+    if not chat_session:
+        return jsonify({"error": "无效的 session_id"}), 404
+
+    print(f"会话[{session_id[:8]}...] 收到问题: {question}")
     answer = chat_session.ask(question)
-    print(f"GPT 回答: {answer}")
+    print(f"会话[{session_id[:8]}...] GPT 回答: {answer}")
+
+    # 将问答记录保存到会话中
+    chat_session.messages.append({"role": "user", "content": question})
+    chat_session.messages.append({"role": "gpt", "content": answer})
 
     return jsonify({"answer": answer})
 
-@app.route('/reset', methods=['POST'])
-def reset_session():
-    global chat_session
-    # 通过创建一个新的ChatSession实例来重置会话
-    chat_session = ChatSession()
-    print("会话已重置，新对话已开始。")
-    return jsonify({"status": "ok", "message": "Session has been reset."})
 
-# ==============================================================================
-# 5. 主程序入口 (这部分不用动)
-# ==============================================================================
+# 【新增】/session/new 路由用于创建新会话
+@app.route('/session/new', methods=['POST'])
+def new_session():
+    session_id = session_manager.create_session()
+    # 顺便返回所有会话的列表，方便前端更新侧边栏
+    all_sessions = session_manager.get_all_sessions_info()
+    return jsonify({"new_session_id": session_id, "all_sessions": all_sessions})
+
+
+# 【新增】/session/all 路由用于获取所有会话列表
+@app.route('/session/all', methods=['GET'])
+def get_all_sessions():
+    return jsonify(session_manager.get_all_sessions_info())
+
+
+# 【新增】/session/history 路由用于获取指定会话的历史记录
+@app.route('/session/history', methods=['GET'])
+def get_session_history():
+    session_id = request.args.get('session_id')
+    if not session_id:
+        return jsonify({"error": "缺少 session_id 参数"}), 400
+
+    chat_session = session_manager.get_session(session_id)
+    if not chat_session:
+        return jsonify({"error": "无效的 session_id"}), 404
+
+    return jsonify({"messages": chat_session.messages})
+
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=6006, debug=True)
-

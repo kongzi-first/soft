@@ -1,4 +1,4 @@
-<!-- 文件名: templates/index.html (升级版) -->
+<!-- 文件名: templates/index.html (在UI升级版基础上增加多会话功能) -->
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI 聊天助手</title>
     <style>
+        /* 样式基本不变，为历史列表和 active 状态增加了定义 */
         :root {
             --bg-color: #f7f7f8;
             --sidebar-bg: #202123;
@@ -14,6 +15,7 @@
             --text-color: #ececf1;
             --border-color: rgba(255, 255, 255, 0.2);
             --accent-color: #10a37f;
+            --hover-bg: rgba(255, 255, 255, 0.1);
         }
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
@@ -41,12 +43,32 @@
             text-align: left;
             background: none;
             color: var(--text-color);
+            margin-bottom: 10px; /* 为历史列表留出空间 */
         }
         #new-chat-btn:hover {
-            background-color: rgba(255, 255, 255, 0.1);
+            background-color: var(--hover-bg);
         }
         #new-chat-btn span {
             margin-left: 10px;
+        }
+        #history-list {
+            flex-grow: 1;
+            overflow-y: auto;
+        }
+        .history-item {
+            padding: 10px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            font-size: 14px;
+        }
+        .history-item:hover {
+            background-color: var(--hover-bg);
+        }
+        .history-item.active {
+            background-color: var(--accent-color);
         }
         #main-content {
             flex-grow: 1;
@@ -79,10 +101,10 @@
             align-items: center;
             justify-content: center;
             font-weight: bold;
+            flex-shrink: 0; /* 防止头像被压缩 */
         }
         .user .avatar { background-color: #5c2f87; }
         .gpt .message-wrapper { background-color: #444654; }
-
         #input-container {
             position: absolute;
             bottom: 0;
@@ -122,166 +144,12 @@
             display: flex;
             align-items: center;
             justify-content: center;
+            flex-shrink: 0; /* 防止按钮被压缩 */
         }
         #send-button:disabled {
             background-color: #555;
             cursor: not-allowed;
         }
-    </style>
-</head>
-<body>
-
-<div id="sidebar">
-    <button id="new-chat-btn">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 5V19" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path><path d="M5 12H19" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
-        <span>新建对话</span>
-    </button>
-    <!-- 历史会话列表可以未来在这里添加 -->
-</div>
-
-<div id="main-content">
-    <div id="chat-box">
-        <!-- 欢迎信息 -->
-        <div class="message-wrapper gpt">
-            <div class="avatar">AI</div>
-            <div class="message">你好！我是你的AI助手，有什么可以帮你的吗？</div>
-        </div>
-    </div>
-
-    <div id="input-container">
-        <div id="input-area">
-            <textarea id="user-input" placeholder="向我提问..." rows="1"></textarea>
-            <button id="send-button" title="发送">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M7 11L12 6L17 11M12 18V7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
-            </button>
-        </div>
-    </div>
-</div>
-
-<script>
-    const chatBox = document.getElementById('chat-box');
-    const userInput = document.getElementById('user-input');
-    const sendButton = document.getElementById('send-button');
-    const newChatButton = document.getElementById('new-chat-btn');
-
-    async function sendMessage() {
-        const question = userInput.value.trim();
-        if (!question) return;
-
-        addMessage(question, 'user');
-        userInput.value = '';
-        adjustTextareaHeight();
-        toggleSendButton(true);
-
-        // 创建一个用于显示"思考中"的临时消息
-        const thinkingMessage = addMessage('...', 'gpt', true);
-
-        try {
-            const response = await fetch('/chat', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ question: question }),
-            });
-
-            if (!response.ok) {
-                const errorData = await response.json();
-                updateThinkingMessage(thinkingMessage, `出错了: ${errorData.error || response.statusText}`);
-                return;
-            }
-
-            const data = await response.json();
-            // 更新"思考中"的消息为真实回答
-            updateThinkingMessage(thinkingMessage, data.answer);
-
-        } catch (error) {
-            console.error('Error:', error);
-            updateThinkingMessage(thinkingMessage, '网络或服务器连接失败，请检查后端服务是否正常运行。');
-        } finally {
-            toggleSendButton(false);
-        }
-    }
-
-    function addMessage(text, sender, isThinking = false) {
-        const wrapper = document.createElement('div');
-        wrapper.className = `message-wrapper ${sender}`;
-
-        const avatar = document.createElement('div');
-        avatar.className = 'avatar';
-        avatar.textContent = sender === 'user' ? '你' : 'AI';
-
-        const message = document.createElement('div');
-        message.className = 'message';
-        if (isThinking) {
-            // 打字机效果
-            message.innerHTML = '<span>.</span><span>.</span><span>.</span>';
-            message.classList.add('thinking');
-        } else {
-            message.textContent = text;
-        }
-
-        wrapper.appendChild(avatar);
-        wrapper.appendChild(message);
-        chatBox.appendChild(wrapper);
-        chatBox.scrollTop = chatBox.scrollHeight;
-        return message; // 返回消息元素以便后续更新
-    }
-
-    function updateThinkingMessage(messageElement, newText) {
-        messageElement.innerHTML = ''; // 清除打字机动画
-        messageElement.classList.remove('thinking');
-        messageElement.textContent = newText;
-        chatBox.scrollTop = chatBox.scrollHeight;
-    }
-
-    function toggleSendButton(isSending) {
-        sendButton.disabled = isSending;
-        userInput.disabled = isSending;
-        if (isSending) {
-            userInput.placeholder = "AI 正在思考中...";
-        } else {
-            userInput.placeholder = "向我提问...";
-            userInput.focus();
-        }
-    }
-
-    // 动态调整文本框高度
-    function adjustTextareaHeight() {
-        userInput.style.height = 'auto';
-        userInput.style.height = (userInput.scrollHeight) + 'px';
-    }
-
-    sendButton.addEventListener('click', sendMessage);
-    userInput.addEventListener('keydown', (event) => {
-        if (event.key === 'Enter' && !event.shiftKey) {
-            event.preventDefault();
-            sendMessage();
-        }
-    });
-    userInput.addEventListener('input', adjustTextareaHeight);
-
-    // “新建对话”按钮逻辑
-    newChatButton.addEventListener('click', async () => {
-        // 向后端发送一个“重置”信号
-        try {
-            const response = await fetch('/reset', { method: 'POST' });
-            if(response.ok) {
-                chatBox.innerHTML = `
-                    <div class="message-wrapper gpt">
-                        <div class="avatar">AI</div>
-                        <div class="message">你好！新的对话已经开始。</div>
-                    </div>`;
-                console.log("新对话已创建");
-            } else {
-                alert("创建新对话失败，请检查后端服务。");
-            }
-        } catch(e) {
-            alert("无法连接到服务器以创建新对话。");
-        }
-    });
-
-    // 为打字机效果添加一些CSS
-    const style = document.createElement('style');
-    style.innerHTML = `
         .thinking span {
             animation: blink 1.4s infinite both;
             font-size: 2em;
@@ -294,8 +162,225 @@
             20% { opacity: 1; }
             100% { opacity: .2; }
         }
-    `;
-    document.head.appendChild(style);
+    </style>
+</head>
+<body>
+
+<div id="sidebar">
+    <button id="new-chat-btn">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 5V19" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path><path d="M5 12H19" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+        <span>新建对话</span>
+    </button>
+    <div id="history-list">
+        <!-- 历史对话列表将由JS动态填充 -->
+    </div>
+</div>
+
+<div id="main-content">
+    <div id="chat-box">
+        <!-- 聊天内容将由JS动态填充 -->
+    </div>
+    <div id="input-container">
+        <div id="input-area">
+            <textarea id="user-input" placeholder="请先新建或选择一个对话" rows="1" disabled></textarea>
+            <button id="send-button" title="发送" disabled>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M7 11L12 6L17 11M12 18V7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+    // ----- 获取DOM元素 -----
+    const chatBox = document.getElementById('chat-box');
+    const userInput = document.getElementById('user-input');
+    const sendButton = document.getElementById('send-button');
+    const newChatButton = document.getElementById('new-chat-btn');
+    const historyList = document.getElementById('history-list');
+
+    // ----- 全局状态 -----
+    let currentSessionId = null;
+
+    // ----- 通用API请求函数 -----
+    async function apiRequest(endpoint, options = {}) {
+        try {
+            const response = await fetch(endpoint, options);
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({ error: `HTTP错误，状态码: ${response.status}` }));
+                throw new Error(errorData.error);
+            }
+            return await response.json();
+        } catch (error) {
+            console.error(`API请求错误 (${endpoint}):`, error);
+            alert(`请求失败: ${error.message}`);
+            return null;
+        }
+    }
+
+    // ----- 核心聊天逻辑 -----
+    async function sendMessage() {
+        const question = userInput.value.trim();
+        if (!question || !currentSessionId || sendButton.disabled) return;
+
+        addMessageToUI(question, 'user');
+        userInput.value = '';
+        adjustTextareaHeight();
+        toggleInput(true, 'AI 正在思考中...');
+
+        const thinkingMessage = addThinkingMessage(); // 添加思考中动画
+
+        const data = await apiRequest('/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ session_id: currentSessionId, question: question }),
+        });
+
+        if (data && data.answer) {
+            updateThinkingMessage(thinkingMessage, data.answer);
+            // 检查是否需要更新侧边栏标题
+            const historyItem = document.querySelector(`.history-item[data-session-id="${currentSessionId}"]`);
+            if (historyItem && historyItem.textContent === "新对话") {
+                historyItem.textContent = question;
+            }
+        } else {
+            updateThinkingMessage(thinkingMessage, '抱歉，无法获取回答。请检查后端日志。');
+        }
+        toggleInput(false);
+    }
+    
+    // ----- 会话管理 -----
+    async function createNewSession() {
+        toggleInput(true, "正在创建新对话...");
+        const data = await apiRequest('/session/new', { method: 'POST' });
+        if (data && data.new_session_id) {
+            updateHistoryListUI(data.all_sessions);
+            await switchToSession(data.new_session_id); // 切换到新创建的会话
+        } else {
+            toggleInput(false); // 如果创建失败，恢复输入
+        }
+    }
+
+    async function loadAllSessions() {
+        toggleInput(true, "正在加载历史会话...");
+        const data = await apiRequest('/session/all', { method: 'GET' });
+        if (data) {
+            if (Object.keys(data).length > 0) {
+                updateHistoryListUI(data);
+                // 默认加载第一个会话
+                await switchToSession(Object.keys(data)[0]);
+            } else {
+                // 如果没有历史会话，则自动创建一个新的
+                await createNewSession();
+            }
+        } else {
+             chatBox.innerHTML = `<div class="message-wrapper gpt"><div class="avatar">AI</div><div class="message">无法加载历史会话，请检查后端服务是否开启。</div></div>`;
+        }
+    }
+
+    async function switchToSession(sessionId) {
+        if (!sessionId || sessionId === currentSessionId && chatBox.innerHTML !== '') return;
+
+        currentSessionId = sessionId;
+        chatBox.innerHTML = ''; // 清空聊天窗口
+        toggleInput(true, "正在加载历史记录...");
+
+        const data = await apiRequest(`/session/history?session_id=${sessionId}`, { method: 'GET' });
+
+        if (data && data.messages) {
+            if (data.messages.length === 0) {
+                // 新的、还未开始的对话
+                addMessageToUI('你好！新的对话已经开始。', 'gpt');
+            } else {
+                data.messages.forEach(msg => addMessageToUI(msg.content, msg.role));
+            }
+        }
+        
+        updateActiveHistoryItemUI(sessionId);
+        toggleInput(false);
+    }
+
+    // ----- UI 更新和辅助函数 -----
+    function addMessageToUI(text, sender) {
+        const wrapper = document.createElement('div');
+        wrapper.className = `message-wrapper ${sender}`;
+        const avatarText = sender === 'user' ? '你' : 'AI';
+        // 使用 textContent 防止XSS攻击
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'message';
+        messageDiv.textContent = text;
+        wrapper.innerHTML = `<div class="avatar">${avatarText}</div>`;
+        wrapper.appendChild(messageDiv);
+        chatBox.appendChild(wrapper);
+        scrollToBottom();
+    }
+
+    function addThinkingMessage() {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'message-wrapper gpt';
+        wrapper.innerHTML = `
+            <div class="avatar">AI</div>
+            <div class="message thinking"><span>.</span><span>.</span><span>.</span></div>`;
+        chatBox.appendChild(wrapper);
+        scrollToBottom();
+        return wrapper; // 返回 wrapper 以便后续更新
+    }
+
+    function updateThinkingMessage(wrapperElement, newText) {
+        const messageDiv = wrapperElement.querySelector('.message');
+        messageDiv.innerHTML = '';
+        messageDiv.classList.remove('thinking');
+        messageDiv.textContent = newText;
+        scrollToBottom();
+    }
+
+    function updateHistoryListUI(sessions) {
+        historyList.innerHTML = '';
+        // 按创建顺序（通常是字典顺序，但不保证，未来可优化为时间戳排序）
+        for (const [id, title] of Object.entries(sessions)) {
+            const item = document.createElement('div');
+            item.className = 'history-item';
+            item.textContent = title;
+            item.dataset.sessionId = id;
+            item.onclick = () => switchToSession(id);
+            historyList.appendChild(item);
+        }
+    }
+
+    function updateActiveHistoryItemUI(sessionId) {
+        document.querySelectorAll('.history-item').forEach(item => {
+            item.classList.toggle('active', item.dataset.sessionId === sessionId);
+        });
+    }
+
+    function toggleInput(disabled, placeholder = "向我提问...") {
+        userInput.disabled = disabled;
+        sendButton.disabled = disabled;
+        userInput.placeholder = placeholder;
+        if (!disabled) userInput.focus();
+    }
+
+    function adjustTextareaHeight() {
+        userInput.style.height = 'auto';
+        userInput.style.height = (userInput.scrollHeight) + 'px';
+    }
+
+    function scrollToBottom() {
+        chatBox.scrollTop = chatBox.scrollHeight;
+    }
+
+    // ----- 事件监听 -----
+    sendButton.addEventListener('click', sendMessage);
+    userInput.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' && !event.shiftKey) {
+            event.preventDefault();
+            sendMessage();
+        }
+    });
+    userInput.addEventListener('input', adjustTextareaHeight);
+    newChatButton.addEventListener('click', createNewSession);
+
+    // ----- 初始化 -----
+    document.addEventListener('DOMContentLoaded', loadAllSessions);
 
 </script>
 
